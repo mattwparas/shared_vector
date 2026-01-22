@@ -127,6 +127,8 @@ impl<T> ExactSizeIterator for RawValIter<T> {}
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::AtomicUsize;
+
     #[test]
     fn into_iter_test() {
         struct Foo {
@@ -156,5 +158,73 @@ mod tests {
         let sum = resulting.into_iter().map(|x| *x.value).sum::<i32>();
 
         assert_eq!(sum, 5050)
+    }
+
+    #[test]
+    fn into_iter_drops_everything() {
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+        struct Foo {
+            value: Box<i32>,
+        }
+
+        impl Foo {
+            pub fn new(value: i32) -> Self {
+                Self {
+                    value: Box::new(value),
+                }
+            }
+        }
+
+        impl Drop for Foo {
+            fn drop(&mut self) {
+                COUNTER.fetch_add(1, std::sync::atomic::Ordering::Acquire);
+            }
+        }
+
+        let mut vector = crate::Vector::new();
+
+        for i in 0..=100 {
+            vector.push(Foo::new(i));
+        }
+
+        let resulting = vector.into_iter().collect::<Vec<_>>();
+        let sum = resulting.into_iter().map(|x| *x.value).sum::<i32>();
+        assert_eq!(sum, 5050);
+        assert_eq!(COUNTER.load(std::sync::atomic::Ordering::Relaxed), 101);
+    }
+
+    #[test]
+    fn into_iter_drops_everything_partial_usage() {
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+        struct Foo {}
+
+        impl Foo {
+            pub fn new() -> Self {
+                Self {}
+            }
+        }
+
+        impl Drop for Foo {
+            fn drop(&mut self) {
+                COUNTER.fetch_add(1, std::sync::atomic::Ordering::Acquire);
+            }
+        }
+
+        let mut vector = crate::Vector::new();
+
+        for _ in 0..=100 {
+            vector.push(Foo::new());
+        }
+
+        let mut iter = vector.into_iter();
+
+        iter.next();
+        iter.next();
+
+        drop(iter);
+
+        assert_eq!(COUNTER.load(std::sync::atomic::Ordering::Relaxed), 101);
     }
 }
