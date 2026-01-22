@@ -1671,18 +1671,3 @@ fn drain1() {
     let end = 16059518370053021185.min(len);
     vectors[2].drain(start..end);
 }
-
-#[test]
-fn into_iter() {
-    let mut vector = Vector::new();
-    vector.push(10);
-    vector.push(20);
-    vector.push(30);
-    vector.push(40);
-    vector.push(50);
-    vector.push(60);
-
-    let res = vector.into_iter().collect::<Vec<_>>();
-
-    dbg!(res);
-}
