@@ -30,7 +30,9 @@ pub struct VecHeader {
 }
 
 impl VecHeader {
-    fn remaining_capacity(&self) -> u32 { self.cap - self.len }
+    fn remaining_capacity(&self) -> u32 {
+        self.cap - self.len
+    }
 }
 
 #[repr(C)]
@@ -173,8 +175,13 @@ impl<T, R: RefCount, A: Allocator> HeaderBuffer<T, R, A> {
     }
 }
 
-pub unsafe fn move_data<T>(src_data: *mut T, src_vec: &mut VecHeader, dst_data: *mut T, dst_vec: &mut VecHeader) {
-    debug_assert!(dst_vec.cap - dst_vec.len  >= src_vec.len);
+pub unsafe fn move_data<T>(
+    src_data: *mut T,
+    src_vec: &mut VecHeader,
+    dst_data: *mut T,
+    dst_vec: &mut VecHeader,
+) {
+    debug_assert!(dst_vec.cap - dst_vec.len >= src_vec.len);
     let len = src_vec.len;
     if len > 0 {
         unsafe {
@@ -189,8 +196,11 @@ pub unsafe fn move_data<T>(src_data: *mut T, src_vec: &mut VecHeader, dst_data: 
     }
 }
 
-pub unsafe fn extend_from_slice_assuming_capacity<T: Clone>(data: *mut T, vec: &mut VecHeader, slice: &[T])
-where
+pub unsafe fn extend_from_slice_assuming_capacity<T: Clone>(
+    data: *mut T,
+    vec: &mut VecHeader,
+    slice: &[T],
+) where
     T: Clone,
 {
     let len = slice.len() as u32;
@@ -209,7 +219,11 @@ where
 }
 
 // Returns true if the iterator was emptied.
-pub unsafe fn extend_within_capacity<T, I: Iterator<Item = T>>(data: *mut T, vec: &mut VecHeader, iter: &mut I) -> bool {
+pub unsafe fn extend_within_capacity<T, I: Iterator<Item = T>>(
+    data: *mut T,
+    vec: &mut VecHeader,
+    iter: &mut I,
+) -> bool {
     let inital_len = vec.len;
 
     let mut ptr = data.add(inital_len as usize);

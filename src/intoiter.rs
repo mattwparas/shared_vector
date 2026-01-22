@@ -5,12 +5,15 @@ use std::{
 
 use crate::{RawVector, Vector};
 
-pub struct IntoIter<T> {
+use crate::alloc::{Allocator, Global};
+
+pub struct IntoIter<T, A: Allocator = Global> {
     _buf: RawVector<T>, // we don't actually care about this. Just need it to live.
     iter: RawValIter<T>,
+    pub(crate) allocator: A,
 }
 
-impl<T> Iterator for IntoIter<T> {
+impl<T, A: Allocator> Iterator for IntoIter<T, A> {
     type Item = T;
     fn next(&mut self) -> Option<T> {
         self.iter.next()
@@ -28,13 +31,18 @@ impl<T> DoubleEndedIterator for IntoIter<T> {
 
 impl<T> ExactSizeIterator for IntoIter<T> {}
 
-impl<T> Drop for IntoIter<T> {
+impl<T, A: Allocator> Drop for IntoIter<T, A> {
     fn drop(&mut self) {
+        // drop any remaining elements
         for _ in &mut *self {}
+
+        unsafe {
+            self._buf.deallocate_no_drop(&self.allocator);
+        }
     }
 }
 
-impl<T> IntoIterator for Vector<T> {
+impl<T, A: Allocator> IntoIterator for Vector<T, A> {
     type Item = T;
     type IntoIter = IntoIter<T>;
     fn into_iter(self) -> IntoIter<T> {
@@ -42,7 +50,11 @@ impl<T> IntoIterator for Vector<T> {
 
         mem::forget(self);
 
-        IntoIter { iter, _buf: buf }
+        IntoIter {
+            iter,
+            _buf: buf,
+            allocator: Global,
+        }
     }
 }
 
@@ -112,3 +124,37 @@ impl<T> DoubleEndedIterator for RawValIter<T> {
 }
 
 impl<T> ExactSizeIterator for RawValIter<T> {}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn into_iter_test() {
+        struct Foo {
+            value: Box<i32>,
+        }
+
+        impl Foo {
+            pub fn new(value: i32) -> Self {
+                Self {
+                    value: Box::new(value),
+                }
+            }
+        }
+
+        impl Drop for Foo {
+            fn drop(&mut self) {}
+        }
+
+        let mut vector = crate::Vector::new();
+
+        for i in 0..=100 {
+            vector.push(Foo::new(i));
+        }
+
+        let resulting = vector.into_iter().collect::<Vec<_>>();
+
+        let sum = resulting.into_iter().map(|x| *x.value).sum::<i32>();
+
+        assert_eq!(sum, 5050)
+    }
+}

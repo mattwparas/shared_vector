@@ -129,6 +129,19 @@ impl<T> RawVector<T> {
         self.header.len = 0;
     }
 
+    pub unsafe fn deallocate_no_drop<A: Allocator>(&mut self, allocator: &A) {
+        if self.header.cap == 0 {
+            return;
+        }
+
+        self.clear_without_drop();
+        self.deallocate_buffer(allocator);
+
+        self.data = NonNull::dangling();
+        self.header.cap = 0;
+        self.header.len = 0;
+    }
+
     #[inline]
     /// Returns `true` if the vector contains no elements.
     pub fn is_empty(&self) -> bool {
@@ -171,6 +184,10 @@ impl<T> RawVector<T> {
     /// Clears the vector, removing all values.
     pub fn clear(&mut self) {
         unsafe { raw::clear(self.data_ptr(), &mut self.header) }
+    }
+
+    pub fn clear_without_drop(&mut self) {
+        self.header.len = 0;
     }
 
     unsafe fn base_ptr<A: Allocator>(&self, _allocator: &A) -> NonNull<u8> {
