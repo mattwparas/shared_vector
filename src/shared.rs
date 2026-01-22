@@ -1,13 +1,13 @@
 use core::fmt::Debug;
 use core::ops::{Deref, DerefMut, Index, IndexMut};
 use core::ptr::NonNull;
-use core::{mem, ptr};
 use core::sync::atomic::Ordering;
+use core::{mem, ptr};
 
-use crate::raw;
 use crate::alloc::{AllocError, Allocator, Global};
+use crate::raw;
 use crate::raw::{BufferSize, HeaderBuffer};
-use crate::vector::{Vector, RawVector};
+use crate::vector::{RawVector, Vector};
 use crate::{grow_amortized, AtomicRefCount, DefaultRefCount, RefCount};
 
 /// A heap allocated, atomically reference counted, immutable contiguous buffer containing elements of type `T`.
@@ -100,10 +100,13 @@ impl<T, R: RefCount, A: Allocator> RefCountedVector<T, R, A> {
             Ok(RefCountedVector {
                 inner: HeaderBuffer::from_raw(ptr.cast()),
             })
-            }
+        }
     }
 
-    pub fn try_from_slice_in(slice: &[T], allocator: A) -> Result<Self, AllocError> where T: Clone {
+    pub fn try_from_slice_in(slice: &[T], allocator: A) -> Result<Self, AllocError>
+    where
+        T: Clone,
+    {
         let mut v = Self::try_with_capacity_in(slice.len(), allocator)?;
 
         unsafe {
@@ -151,7 +154,7 @@ impl<T, R: RefCount, A: Allocator> RefCountedVector<T, R, A> {
         unsafe {
             self.inner.as_ref().ref_count.add_ref();
             RefCountedVector {
-                inner: HeaderBuffer::from_raw(self.inner.header)
+                inner: HeaderBuffer::from_raw(self.inner.header),
             }
         }
     }
@@ -159,9 +162,7 @@ impl<T, R: RefCount, A: Allocator> RefCountedVector<T, R, A> {
     /// Extracts a slice containing the entire vector.
     #[inline]
     pub fn as_slice(&self) -> &[T] {
-        unsafe {
-            core::slice::from_raw_parts(self.data_ptr(), self.len())
-        }
+        unsafe { core::slice::from_raw_parts(self.data_ptr(), self.len()) }
     }
 
     /// Returns true if this is the only existing handle to the buffer.
@@ -232,7 +233,10 @@ impl<T, R: RefCount, A: Allocator> RefCountedVector<T, R, A> {
 
     #[inline]
     pub fn data_ptr(&self) -> *mut T {
-        unsafe { (self.inner.as_ptr() as *mut u8).add(raw::header_size::<raw::Header<R, A>, T>()) as *mut T }
+        unsafe {
+            (self.inner.as_ptr() as *mut u8).add(raw::header_size::<raw::Header<R, A>, T>())
+                as *mut T
+        }
     }
 
     // SAFETY: call this only if the vector is unique.
@@ -261,10 +265,7 @@ impl<T: Clone, R: RefCount, A: Allocator + Clone> RefCountedVector<T, R, A> {
             mem::forget(self);
 
             Vector {
-                raw: RawVector {
-                    data,
-                    header,
-                },
+                raw: RawVector { data, header },
                 allocator,
             }
         }
@@ -286,9 +287,7 @@ impl<T: Clone, R: RefCount, A: Allocator + Clone> RefCountedVector<T, R, A> {
     pub fn pop(&mut self) -> Option<T> {
         self.ensure_unique();
 
-        unsafe {
-            raw::pop(self.data_ptr(), &mut self.vec_header_mut())
-        }
+        unsafe { raw::pop(self.data_ptr(), &mut self.vec_header_mut()) }
     }
 
     /// Removes an element from the vector and returns it.
@@ -392,9 +391,7 @@ impl<T: Clone, R: RefCount, A: Allocator + Clone> RefCountedVector<T, R, A> {
         A: Clone,
     {
         self.ensure_unique();
-        unsafe {
-            core::slice::from_raw_parts_mut(self.data_ptr(), self.len())
-        }
+        unsafe { core::slice::from_raw_parts_mut(self.data_ptr(), self.len()) }
     }
 
     /// Allocates a duplicate of this buffer (infallible).
@@ -430,7 +427,7 @@ impl<T: Clone, R: RefCount, A: Allocator + Clone> RefCountedVector<T, R, A> {
             raw::extend_from_slice_assuming_capacity(
                 clone.data_ptr(),
                 clone.vec_header_mut(),
-                self.as_slice()
+                self.as_slice(),
             );
 
             Ok(clone)
@@ -539,12 +536,18 @@ impl<T: Clone, R: RefCount, A: Allocator + Clone> RefCountedVector<T, R, A> {
             if other.is_unique() {
                 // Fast path: memcpy
                 raw::move_data(
-                     other.data_ptr(), &mut other.inner.header.as_mut().vec,
-                     self.data_ptr(), &mut self.inner.as_mut().vec,
+                    other.data_ptr(),
+                    &mut other.inner.header.as_mut().vec,
+                    self.data_ptr(),
+                    &mut self.inner.as_mut().vec,
                 )
             } else {
                 // Slow path, clone each item.
-                raw::extend_from_slice_assuming_capacity(self.data_ptr(), self.vec_header_mut(), other.as_slice());
+                raw::extend_from_slice_assuming_capacity(
+                    self.data_ptr(),
+                    self.vec_header_mut(),
+                    other.as_slice(),
+                );
 
                 *other =
                     Self::try_with_capacity_in(other.capacity(), self.inner.allocator().clone())
@@ -611,7 +614,6 @@ impl<T: Clone, R: RefCount, A: Allocator + Clone> RefCountedVector<T, R, A> {
         Ok(())
     }
 
-
     // TODO: remove this one?
     /// Returns the concatenation of two vectors.
     pub fn concatenate(mut self, mut other: Self) -> Self
@@ -641,7 +643,6 @@ impl<T, R: RefCount, A: Allocator> Drop for RefCountedVector<T, R, A> {
         }
     }
 }
-
 
 unsafe impl<T: Sync, A: Allocator + Send> Send for AtomicSharedVector<T, A> {}
 
@@ -841,7 +842,6 @@ fn ensure_unique_empty() {
     let mut v: SharedVector<u32> = SharedVector::new();
     v.ensure_unique();
 }
-
 
 #[test]
 fn shrink_to_zero() {

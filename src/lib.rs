@@ -1,15 +1,18 @@
 #![cfg_attr(feature = "nightly", feature(allocator_api))]
 #![doc = include_str!("../README.md")]
 
+mod drain;
+mod intoiter;
 mod raw;
 mod shared;
-mod vector;
-mod drain;
 mod splice;
+mod vector;
 
 pub use raw::{AtomicRefCount, BufferSize, DefaultRefCount, RefCount};
 pub use shared::{AtomicSharedVector, RefCountedVector, SharedVector};
-pub use vector::{Vector, RawVector};
+pub use vector::{RawVector, Vector};
+
+pub use intoiter::IntoIter;
 
 pub mod alloc {
     pub use allocator_api2::alloc::{AllocError, Allocator, Global};

@@ -1,13 +1,14 @@
 use core::fmt::Debug;
+use core::ops::RangeBounds;
 use core::ops::{Deref, DerefMut, Index, IndexMut};
 use core::ptr::NonNull;
 use core::{mem, ptr};
-use core::ops::RangeBounds;
 
 use crate::alloc::{AllocError, Allocator, Global};
 use crate::drain::Drain;
 use crate::raw::{
-    self, buffer_layout, AtomicRefCount, BufferSize, Header, HeaderBuffer, RefCount, VecHeader, move_data,
+    self, buffer_layout, move_data, AtomicRefCount, BufferSize, Header, HeaderBuffer, RefCount,
+    VecHeader,
 };
 use crate::shared::{AtomicSharedVector, SharedVector};
 use crate::splice::Splice;
@@ -42,13 +43,19 @@ pub struct RawVector<T> {
 impl<T> RawVector<T> {
     /// Creates an empty, unallocated raw vector.
     pub fn new() -> Self {
-        RawVector { data: NonNull::dangling(), header: VecHeader { len: 0, cap: 0 } }
+        RawVector {
+            data: NonNull::dangling(),
+            header: VecHeader { len: 0, cap: 0 },
+        }
     }
 
     /// Creates an empty pre-allocated vector with a given storage capacity.
     ///
     /// Does not allocate memory if `cap` is zero.
-    pub fn try_with_capacity<A: Allocator>(allocator: &A, cap: usize) -> Result<RawVector<T>, AllocError> {
+    pub fn try_with_capacity<A: Allocator>(
+        allocator: &A,
+        cap: usize,
+    ) -> Result<RawVector<T>, AllocError> {
         if cap == 0 {
             return Ok(RawVector::new());
         }
@@ -60,7 +67,10 @@ impl<T> RawVector<T> {
             ));
             Ok(RawVector {
                 data,
-                header: VecHeader { cap: cap as BufferSize, len: 0 },
+                header: VecHeader {
+                    cap: cap as BufferSize,
+                    len: 0,
+                },
             })
         }
     }
@@ -91,8 +101,8 @@ impl<T> RawVector<T> {
             for _ in 0..(n - 1) {
                 v.push(allocator, elem.clone())
             }
-    
-            v.push(allocator, elem);    
+
+            v.push(allocator, elem);
         }
 
         Ok(v)
@@ -160,9 +170,7 @@ impl<T> RawVector<T> {
 
     /// Clears the vector, removing all values.
     pub fn clear(&mut self) {
-        unsafe {
-            raw::clear(self.data_ptr(), &mut self.header)
-        }
+        unsafe { raw::clear(self.data_ptr(), &mut self.header) }
     }
 
     unsafe fn base_ptr<A: Allocator>(&self, _allocator: &A) -> NonNull<u8> {
@@ -211,9 +219,7 @@ impl<T> RawVector<T> {
     /// Removes the last element from the vector and returns it, or `None` if it is empty.
     #[inline]
     pub fn pop(&mut self) -> Option<T> {
-        unsafe {
-            raw::pop(self.data_ptr(), &mut self.header)
-        }
+        unsafe { raw::pop(self.data_ptr(), &mut self.header) }
     }
 
     /// Removes and returns the element at position `index` within the vector,
@@ -354,7 +360,12 @@ impl<T> RawVector<T> {
         self.try_reserve(allocator, other.len()).unwrap();
 
         unsafe {
-            move_data(other.data_ptr(), &mut other.header, self.data_ptr(), &mut self.header);
+            move_data(
+                other.data_ptr(),
+                &mut other.header,
+                self.data_ptr(),
+                &mut self.header,
+            );
         }
     }
 
@@ -363,7 +374,11 @@ impl<T> RawVector<T> {
     /// # Safety
     ///
     /// The provided allocator must be the one this raw vector was created with.
-    pub unsafe fn extend<A: Allocator>(&mut self, allocator: &A, data: impl IntoIterator<Item = T>) {
+    pub unsafe fn extend<A: Allocator>(
+        &mut self,
+        allocator: &A,
+        data: impl IntoIterator<Item = T>,
+    ) {
         let mut iter = data.into_iter();
         let (min, max) = iter.size_hint();
         self.try_reserve(allocator, max.unwrap_or(min)).unwrap();
@@ -413,11 +428,14 @@ impl<T> RawVector<T> {
     where
         T: Clone,
     {
-        let mut clone =
-            Self::try_with_capacity(allocator, cap.max(self.len())).unwrap();
+        let mut clone = Self::try_with_capacity(allocator, cap.max(self.len())).unwrap();
 
         unsafe {
-            raw::extend_from_slice_assuming_capacity(clone.data_ptr(), &mut clone.header, self.as_slice());
+            raw::extend_from_slice_assuming_capacity(
+                clone.data_ptr(),
+                &mut clone.header,
+                self.as_slice(),
+            );
         }
 
         clone
@@ -425,7 +443,11 @@ impl<T> RawVector<T> {
 
     // Note: Marking this #[inline(never)] is a pretty large regression in the push benchmark.
     #[cold]
-    unsafe fn try_realloc_additional<A: Allocator>(&mut self, allocator: &A, additional: usize) -> Result<(), AllocError> {
+    unsafe fn try_realloc_additional<A: Allocator>(
+        &mut self,
+        allocator: &A,
+        additional: usize,
+    ) -> Result<(), AllocError> {
         let new_cap = grow_amortized(self.len(), additional);
         if new_cap < self.len() {
             return Err(AllocError);
@@ -435,7 +457,11 @@ impl<T> RawVector<T> {
     }
 
     #[cold]
-    unsafe fn try_realloc_with_capacity<A: Allocator>(&mut self, allocator: &A, new_cap: usize) -> Result<(), AllocError> {
+    unsafe fn try_realloc_with_capacity<A: Allocator>(
+        &mut self,
+        allocator: &A,
+        new_cap: usize,
+    ) -> Result<(), AllocError> {
         type R = DefaultRefCount;
 
         unsafe {
@@ -486,7 +512,11 @@ impl<T> RawVector<T> {
     ///
     /// The provided allocator must be the one this raw vector was created with.
     #[inline]
-    pub unsafe fn try_reserve<A: Allocator>(&mut self, allocator: &A, additional: usize) -> Result<(), AllocError> {
+    pub unsafe fn try_reserve<A: Allocator>(
+        &mut self,
+        allocator: &A,
+        additional: usize,
+    ) -> Result<(), AllocError> {
         if self.remaining_capacity() < additional {
             self.try_realloc_additional(allocator, additional)?;
         }
@@ -507,7 +537,11 @@ impl<T> RawVector<T> {
     /// # Safety
     ///
     /// The provided allocator must be the one this raw vector was created with.
-    pub unsafe fn try_reserve_exact<A: Allocator>(&mut self, allocator: &A, additional: usize) -> Result<(), AllocError> {
+    pub unsafe fn try_reserve_exact<A: Allocator>(
+        &mut self,
+        allocator: &A,
+        additional: usize,
+    ) -> Result<(), AllocError> {
         if self.remaining_capacity() >= additional {
             return Ok(());
         }
@@ -523,14 +557,14 @@ impl<T> RawVector<T> {
     /// # Safety
     ///
     /// The provided allocator must be the one this raw vector was created with.
-    pub unsafe fn shrink_to<A: Allocator>(&mut self, allocator: &A, min_capacity: usize)
-    {
+    pub unsafe fn shrink_to<A: Allocator>(&mut self, allocator: &A, min_capacity: usize) {
         let min_capacity = min_capacity.max(self.len());
         if self.capacity() <= min_capacity {
             return;
         }
 
-        self.try_realloc_with_capacity(allocator, min_capacity).unwrap();
+        self.try_realloc_with_capacity(allocator, min_capacity)
+            .unwrap();
     }
 
     /// Shrinks the capacity of the vector as much as possible.
@@ -538,8 +572,7 @@ impl<T> RawVector<T> {
     /// # Safety
     ///
     /// The provided allocator must be the one this raw vector was created with.
-    pub unsafe fn shrink_to_fit<A: Allocator>(&mut self, allocator: &A)
-    {
+    pub unsafe fn shrink_to_fit<A: Allocator>(&mut self, allocator: &A) {
         self.shrink_to(allocator, self.len())
     }
 
@@ -580,12 +613,12 @@ impl<T> RawVector<T> {
         let end = match range.end_bound() {
             Included(n) => *n + 1,
             Excluded(n) => *n,
-            Unbounded => len
+            Unbounded => len,
         };
         let start = match range.start_bound() {
             Included(n) => *n,
-            Excluded(n) => *n+1,
-            Unbounded => 0
+            Excluded(n) => *n + 1,
+            Unbounded => 0,
         };
         assert!(end <= len);
         assert!(start <= end);
@@ -600,7 +633,7 @@ impl<T> RawVector<T> {
                 iter: range_slice.iter(),
                 vec: NonNull::from(self),
             }
-        }        
+        }
     }
 
     /// Creates a splicing iterator that replaces the specified range in the vector
@@ -631,7 +664,7 @@ impl<T> RawVector<T> {
         &'l mut self,
         allocator: &'l A,
         range: R,
-        replace_with: I
+        replace_with: I,
     ) -> Splice<'l, <I as IntoIterator>::IntoIter, A>
     where
         A: Allocator,
@@ -696,7 +729,9 @@ impl<T> RawVector<T> {
                     unsafe {
                         ptr::copy(
                             self.v.as_ptr().add(self.processed_len),
-                            self.v.as_mut_ptr().add(self.processed_len - self.deleted_cnt),
+                            self.v
+                                .as_mut_ptr()
+                                .add(self.processed_len - self.deleted_cnt),
                             self.original_len - self.processed_len,
                         );
                     }
@@ -706,7 +741,12 @@ impl<T> RawVector<T> {
             }
         }
 
-        let mut g = BackshiftOnDrop { v: self, processed_len: 0, deleted_cnt: 0, original_len };
+        let mut g = BackshiftOnDrop {
+            v: self,
+            processed_len: 0,
+            deleted_cnt: 0,
+            original_len,
+        };
 
         fn process_loop<F, T, const DELETED: bool>(
             original_len: usize,
@@ -772,9 +812,7 @@ impl<T: PartialEq<T>> PartialEq<&[T]> for RawVector<T> {
     }
 }
 
-impl<T: Eq> Eq for RawVector<T> {
-
-}
+impl<T: Eq> Eq for RawVector<T> {}
 
 impl<T> AsRef<[T]> for RawVector<T> {
     fn as_ref(&self) -> &[T] {
@@ -849,11 +887,13 @@ impl<T: Debug> Debug for RawVector<T> {
 }
 
 impl<T: core::hash::Hash> core::hash::Hash for RawVector<T> {
-    fn hash<H>(&self, state: &mut H) where H: core::hash::Hasher {
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: core::hash::Hasher,
+    {
         self.as_slice().hash(state)
     }
 }
-
 
 /// A heap allocated, mutable contiguous buffer containing elements of type `T`.
 ///
@@ -891,8 +931,6 @@ impl<T> Vector<T, Global> {
         }
     }
 
-
-
     /// Creates an empty pre-allocated vector with a given storage capacity.
     ///
     /// Does not allocate memory if `cap` is zero.
@@ -911,7 +949,10 @@ impl<T> Vector<T, Global> {
     where
         T: Clone,
     {
-        Vector { raw: RawVector::try_from_slice(&Global, data).unwrap(), allocator: Global }
+        Vector {
+            raw: RawVector::try_from_slice(&Global, data).unwrap(),
+            allocator: Global,
+        }
     }
 
     /// Creates a vector with `n` clones of `elem`.
@@ -919,7 +960,10 @@ impl<T> Vector<T, Global> {
     where
         T: Clone,
     {
-        Vector { raw: RawVector::try_from_elem(&Global, elem, n).unwrap(), allocator: Global }
+        Vector {
+            raw: RawVector::try_from_elem(&Global, elem, n).unwrap(),
+            allocator: Global,
+        }
     }
 }
 
@@ -944,7 +988,6 @@ impl<T, A: Allocator> Vector<T, A> {
 
         Ok(Vector { raw, allocator })
     }
-
 
     #[inline(always)]
     /// Returns `true` if the vector contains no elements.
@@ -988,9 +1031,7 @@ impl<T, A: Allocator> Vector<T, A> {
 
     /// Clears the vector, removing all values.
     pub fn clear(&mut self) {
-        unsafe {
-            raw::clear(self.raw.data_ptr(), &mut self.raw.header)
-        }
+        unsafe { raw::clear(self.raw.data_ptr(), &mut self.raw.header) }
     }
 
     unsafe fn into_header_buffer<R>(mut self) -> HeaderBuffer<T, R, A>
@@ -1112,7 +1153,7 @@ impl<T, A: Allocator> Vector<T, A> {
     /// Panics if `index > len`.
     #[inline(always)]
     pub fn insert(&mut self, index: usize, element: T) {
-       unsafe { self.raw.insert(&self.allocator, index, element) }
+        unsafe { self.raw.insert(&self.allocator, index, element) }
     }
 
     /// Clones and appends the contents of the slice to the back of a collection.
@@ -1121,9 +1162,7 @@ impl<T, A: Allocator> Vector<T, A> {
     where
         T: Clone,
     {
-        unsafe {
-            self.raw.extend_from_slice(&self.allocator, data)
-        }
+        unsafe { self.raw.extend_from_slice(&self.allocator, data) }
     }
 
     /// Moves all the elements of `other` into `self`, leaving `other` empty.
@@ -1132,17 +1171,13 @@ impl<T, A: Allocator> Vector<T, A> {
     where
         T: Clone,
     {
-        unsafe {
-            self.raw.append(&self.allocator, &mut other.raw)
-        }
+        unsafe { self.raw.append(&self.allocator, &mut other.raw) }
     }
 
     /// Appends the contents of an iterator to the back of a collection.
     #[inline(always)]
     pub fn extend(&mut self, data: impl IntoIterator<Item = T>) {
-        unsafe {
-            self.raw.extend(&self.allocator, data)
-        }
+        unsafe { self.raw.extend(&self.allocator, data) }
     }
 
     /// Allocates a clone of this buffer.
@@ -1175,16 +1210,12 @@ impl<T, A: Allocator> Vector<T, A> {
 
     #[inline(always)]
     pub fn reserve(&mut self, additional: usize) {
-        unsafe {
-            self.raw.try_reserve(&self.allocator, additional).unwrap()
-        }
+        unsafe { self.raw.try_reserve(&self.allocator, additional).unwrap() }
     }
 
     #[inline(always)]
     pub fn try_reserve(&mut self, additional: usize) -> Result<(), AllocError> {
-        unsafe {
-            self.raw.try_reserve(&self.allocator, additional)
-        }
+        unsafe { self.raw.try_reserve(&self.allocator, additional) }
     }
 
     /// Reserves the minimum capacity for at least `additional` elements to be inserted in the given vector.
@@ -1214,9 +1245,7 @@ impl<T, A: Allocator> Vector<T, A> {
     /// Note that the allocator may give the collection more space than it requests. Therefore, capacity can not
     /// be relied upon to be precisely minimal. Prefer `try_reserve` if future insertions are expected.
     pub fn try_reserve_exact(&mut self, additional: usize) -> Result<(), AllocError> {
-        unsafe {
-            self.raw.try_reserve_exact(&self.allocator, additional)
-        }
+        unsafe { self.raw.try_reserve_exact(&self.allocator, additional) }
     }
 
     /// Shrinks the capacity of the vector with a lower bound.
@@ -1228,9 +1257,7 @@ impl<T, A: Allocator> Vector<T, A> {
     where
         T: Clone,
     {
-        unsafe {
-            self.raw.shrink_to(&self.allocator, min_capacity)
-        }
+        unsafe { self.raw.shrink_to(&self.allocator, min_capacity) }
     }
 
     /// Shrinks the capacity of the vector as much as possible.
@@ -1239,9 +1266,7 @@ impl<T, A: Allocator> Vector<T, A> {
     where
         T: Clone,
     {
-        unsafe {
-            self.raw.shrink_to_fit(&self.allocator)
-        }
+        unsafe { self.raw.shrink_to_fit(&self.allocator) }
     }
 
     /// Removes the specified range from the vector in bulk, returning all
@@ -1296,7 +1321,7 @@ impl<T, A: Allocator> Vector<T, A> {
     pub fn splice<R, I>(
         &mut self,
         range: R,
-        replace_with: I
+        replace_with: I,
     ) -> Splice<'_, <I as IntoIterator>::IntoIter, A>
     where
         R: RangeBounds<usize>,
@@ -1345,9 +1370,7 @@ impl<T, A: Allocator> Vector<T, A> {
 
 impl<T, A: Allocator> Drop for Vector<T, A> {
     fn drop(&mut self) {
-        unsafe {
-            self.raw.deallocate(&self.allocator)
-        }
+        unsafe { self.raw.deallocate(&self.allocator) }
     }
 }
 
@@ -1454,7 +1477,10 @@ impl<T: Clone, A: Allocator + Clone> From<AtomicSharedVector<T, A>> for Vector<T
 }
 
 impl<T: core::hash::Hash, A: Allocator> core::hash::Hash for Vector<T, A> {
-    fn hash<H>(&self, state: &mut H) where H: core::hash::Hasher {
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: core::hash::Hasher,
+    {
         self.as_slice().hash(state)
     }
 }
@@ -1580,14 +1606,16 @@ fn borrowd_dyn_alloc() {
     impl DataStructure<'static> {
         fn new() -> DataStructure<'static> {
             DataStructure {
-                data: Vector::new_in(&Global as &'static dyn Allocator)
+                data: Vector::new_in(&Global as &'static dyn Allocator),
             }
         }
     }
 
     impl<'a> DataStructure<'a> {
         fn new_in(allocator: &'a dyn Allocator) -> DataStructure<'a> {
-            DataStructure { data: Vector::new_in(allocator) }
+            DataStructure {
+                data: Vector::new_in(allocator),
+            }
         }
 
         fn push(&mut self, val: u32) {
@@ -1598,10 +1626,9 @@ fn borrowd_dyn_alloc() {
     let mut ds1 = DataStructure::new();
     ds1.push(1);
 
-    let alloc = Global; 
+    let alloc = Global;
     let mut ds2 = DataStructure::new_in(&alloc);
     ds2.push(2);
-
 }
 
 #[test]
@@ -1613,17 +1640,32 @@ fn splice1() {
 
 #[test]
 fn drain1() {
-    let mut vectors: [Vector<Box<u32>>; 4] = [
-        Vector::new(),
-        Vector::new(),
-        Vector::new(),
-        Vector::new(),
-    ];
+    let mut vectors: [Vector<Box<u32>>; 4] =
+        [Vector::new(), Vector::new(), Vector::new(), Vector::new()];
     vectors[0].shrink_to(3906369431118283232);
     vectors[2].extend_from_slice(&[Box::new(1), Box::new(2), Box::new(3)]);
     let vec = &mut vectors[2];
     let len = vec.len();
-    let start = if len > 0 { 16059518370053021184 % len } else { 0 };
+    let start = if len > 0 {
+        16059518370053021184 % len
+    } else {
+        0
+    };
     let end = 16059518370053021185.min(len);
     vectors[2].drain(start..end);
+}
+
+#[test]
+fn into_iter() {
+    let mut vector = Vector::new();
+    vector.push(10);
+    vector.push(20);
+    vector.push(30);
+    vector.push(40);
+    vector.push(50);
+    vector.push(60);
+
+    let res = vector.into_iter().collect::<Vec<_>>();
+
+    dbg!(res);
 }
